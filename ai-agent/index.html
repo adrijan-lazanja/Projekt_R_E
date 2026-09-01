@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroGenie AI - Pametni agronomski savjetnik</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .bot-msg { background-color: #f3f4f6; border-radius: 18px 18px 18px 2px; border: 1px solid #e5e7eb; }
+        .user-msg { background-color: #0d9488; color: white; border-radius: 18px 18px 2px 18px; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+        input:focus::placeholder { color: transparent; }
+
+        /* Markdown stilovi unutar bot poruka */
+        .bot-msg h1, .bot-msg h2, .bot-msg h3 { font-weight: 700; margin-bottom: 0.4rem; }
+        .bot-msg h1 { font-size: 1.05rem; }
+        .bot-msg h2 { font-size: 0.95rem; }
+        .bot-msg ul, .bot-msg ol { padding-left: 1.25rem; margin: 0.4rem 0; }
+        .bot-msg li { margin-bottom: 0.2rem; }
+        .bot-msg ul li { list-style-type: disc; }
+        .bot-msg ol li { list-style-type: decimal; }
+        .bot-msg strong { font-weight: 700; }
+        .bot-msg em { font-style: italic; }
+        .bot-msg p { margin-bottom: 0.4rem; }
+        .bot-msg p:last-child { margin-bottom: 0; }
+
+        .chip { cursor: pointer; transition: all 0.15s ease; }
+        .chip:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(13,148,136,0.2); }
+    </style>
+</head>
+<body class="bg-white font-sans text-slate-900">
+    <div class="flex h-screen overflow-hidden">
+
+        <!-- SIDEBAR -->
+        <div class="w-72 bg-slate-900 text-white p-6 hidden md:flex flex-col shadow-xl">
+            <div class="flex flex-col items-center gap-3 mb-14">
+                <div class="w-16 h-16 bg-teal-500/20 rounded-2xl flex items-center justify-center">
+                    <i class="fas fa-seedling text-3xl text-teal-400"></i>
+                </div>
+                <h1 class="text-xl font-bold tracking-tight text-white">AgroGenie <span class="text-teal-400">AI</span></h1>
+            </div>
+
+            <div class="flex-1 overflow-y-auto">
+                <h3 class="text-xs uppercase text-slate-500 font-bold mb-4 tracking-[0.2em] px-1">Prognoza</h3>
+                <div id="weatherStatus" class="space-y-2 mb-8">
+                    <div class="bg-slate-800/40 rounded-xl p-4 text-slate-400 text-xs flex items-center gap-2 border border-slate-700/30">
+                        <i class="fas fa-sync fa-spin text-teal-400"></i> Dohvaćam prognozu...
+                    </div>
+                </div>
+                <h3 class="text-xs uppercase text-slate-500 font-bold mb-4 tracking-[0.2em] px-1">Status senzora</h3>
+                <div id="iotStatus" class="space-y-2">
+                    <div class="bg-slate-800/40 rounded-xl p-4 text-slate-400 text-xs flex items-center gap-2 border border-slate-700/30">
+                        <i class="fas fa-sync fa-spin text-teal-400"></i> Sinkronizacija mjerenja...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN CHAT AREA -->
+        <div class="flex-1 flex flex-col min-h-0">
+
+            <!-- HEADER -->
+            <header class="bg-white/90 backdrop-blur-md sticky top-0 z-10 px-8 py-3 flex justify-between items-center border-b border-gray-100 shrink-0">
+                <div class="flex items-center gap-2 text-slate-500">
+                    <i class="fas fa-calendar-days text-teal-500 text-sm"></i>
+                    <span id="headerDate" class="text-sm font-medium text-slate-600"></span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="newSession()" title="Nova sesija"
+                        class="flex items-center gap-2 text-xs text-slate-500 hover:text-teal-600 border border-gray-200 hover:border-teal-400 px-3 py-1.5 rounded-full transition-all">
+                        <i class="fas fa-rotate-right"></i> Nova sesija
+                    </button>
+                </div>
+            </header>
+
+            <!-- PORUKE -->
+            <div id="messages" class="flex-1 overflow-y-auto p-8 space-y-5">
+                <div class="flex flex-col items-start gap-1">
+                    <div class="bot-msg p-6 max-w-2xl shadow-sm text-slate-700 leading-relaxed text-sm">
+                        <p class="font-semibold mb-2">Pozdrav! Ja sam Vaš agronomski AI asistent.</p>
+                        Koristim precizne podatke DZS-a i IoT senzora kako bih Vam pružio stručne savjete o uzgoju kultura u Hrvatskoj.<br><br>
+                        Što Vas zanima o Vašim usjevima danas?
+                    </div>
+                    <span class="text-[10px] text-slate-400 px-2" id="welcomeTime"></span>
+                </div>
+            </div>
+
+            <!-- CHIP PRIJEDLOZI + INPUT (grupirano zajedno) -->
+            <div class="shrink-0 border-t border-gray-100 bg-white/80 backdrop-blur-md px-8 pt-4 pb-10">
+                <div class="max-w-3xl mx-auto space-y-3">
+                    <div id="chips" class="flex flex-wrap gap-2">
+                        <button class="chip text-xs bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-full hover:bg-teal-100" onclick="useChip(this)">Stanje pšenice u Slavoniji</button>
+                        <button class="chip text-xs bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-full hover:bg-teal-100" onclick="useChip(this)">Kukuruz - optimalna vlaga tla</button>
+                        <button class="chip text-xs bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-full hover:bg-teal-100" onclick="useChip(this)">Preporuke za uzgoj maslina</button>
+                        <button class="chip text-xs bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-full hover:bg-teal-100" onclick="useChip(this)">Što posaditi s obzirom na senzore?</button>
+                    </div>
+                    <div class="relative">
+                        <input type="text" id="userInput"
+                            class="w-full p-4 pl-6 pr-14 rounded-full border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 focus:outline-none transition-all shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            placeholder="Pitajte o pšenici, kukuruzu, stanju vlage...">
+                        <button id="sendBtn" onclick="sendMsg()"
+                            class="absolute right-2 top-2 bg-slate-900 hover:bg-teal-700 text-white w-10 h-10 rounded-full transition-all flex items-center justify-center active:scale-95 shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i id="sendIcon" class="fas fa-arrow-up text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const chatBox   = document.getElementById('messages');
+        const input     = document.getElementById('userInput');
+        const sendBtn   = document.getElementById('sendBtn');
+        const sendIcon  = document.getElementById('sendIcon');
+        const iotBox     = document.getElementById('iotStatus');
+        const weatherBox = document.getElementById('weatherStatus');
+
+        marked.setOptions({ breaks: true, gfm: true });
+
+        // Postavi timestamp na welcome poruku
+        document.getElementById('welcomeTime').textContent = getTimestamp();
+
+        // Postavi datum u headeru
+        document.getElementById('headerDate').textContent = new Date().toLocaleDateString('hr-HR', {
+            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+        });
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !input.disabled) sendMsg();
+        });
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res  = await fetch('/iot-init');
+                const data = await res.json();
+                renderIoTCards(data.iot_summary);
+                renderWeatherCards(data.weather_summary);
+            } catch {
+                iotBox.innerHTML     = `<div class="bg-slate-800/40 rounded-xl p-4 text-slate-400 text-xs border border-slate-700/30">Sustav povezan. Čekam prvi upit...</div>`;
+                weatherBox.innerHTML = `<div class="bg-slate-800/40 rounded-xl p-4 text-slate-400 text-xs border border-slate-700/30">Prognoza nedostupna.</div>`;
+            }
+        });
+
+        // ── Pomoćne funkcije ──────────────────────────────────────────
+
+        function getTimestamp() {
+            return new Date().toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function setLoading(isLoading) {
+            input.disabled  = isLoading;
+            sendBtn.disabled = isLoading;
+            sendIcon.className = isLoading
+                ? 'fas fa-circle-notch animate-spin text-sm'
+                : 'fas fa-arrow-up text-sm';
+        }
+
+        function appendMessage(role, html, id = null) {
+            const isUser = role === 'user';
+            const wrap   = document.createElement('div');
+            wrap.className = `flex flex-col ${isUser ? 'items-end' : 'items-start'} gap-1`;
+            wrap.innerHTML = `
+                <div ${id ? `id="${id}"` : ''} class="${isUser ? 'user-msg' : 'bot-msg'} p-5 max-w-2xl shadow-sm text-sm leading-relaxed">${html}</div>
+                <span class="text-[10px] text-slate-400 px-2">${getTimestamp()}</span>`;
+            chatBox.appendChild(wrap);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // ── IoT kartice ───────────────────────────────────────────────
+
+        function renderIoTCards(text) {
+            const metrics = [
+                { key: 'vlaga tla',  icon: 'fa-droplet',    label: 'Vlaga tla',  color: 'text-blue-400', unit: '%' },
+                { key: 'rad pumpe',  icon: 'fa-gauge-high', label: 'Rad pumpe',  color: 'text-teal-400', unit: '%' },
+            ];
+
+            const countMatch = text.match(/\(Na temelju (\d+) mjerenja\)/);
+            const count = countMatch ? countMatch[1] : '?';
+
+            let html = `<p class="text-[10px] text-slate-500 mb-3 px-1">Na temelju <span class="text-teal-400 font-semibold">${count}</span> mjerenja</p>`;
+
+            metrics.forEach(m => {
+                const re    = new RegExp(m.key + '[^:]*:\\s*([\\d.]+)', 'i');
+                const match = text.match(re);
+                const value = match ? parseFloat(match[1]).toFixed(1) : '—';
+                html += `
+                <div class="bg-slate-800/40 rounded-xl px-4 py-3 border border-slate-700/30 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i class="fas ${m.icon} ${m.color} text-xs w-4 text-center"></i>
+                        <span class="text-slate-300 text-xs">${m.label}</span>
+                    </div>
+                    <span class="text-white text-xs font-semibold">${value}${m.unit ? ' ' + m.unit : ''}</span>
+                </div>`;
+            });
+
+            iotBox.innerHTML = html;
+        }
+
+        function renderWeatherCards(text) {
+            if (!text || text.includes('nije dostupna') || text.includes('Greška')) {
+                weatherBox.innerHTML = '<div class="bg-slate-800/40 rounded-xl p-4 text-slate-400 text-xs border border-slate-700/30">' + (text || 'Prognoza nedostupna.') + '</div>';
+                return;
+            }
+
+            const wMetrics = [
+                { re: /Temperatura:\s*([\d.]+)/,         label: 'Temperatura', icon: 'fa-temperature-half', color: 'text-orange-400', unit: '°C'  },
+                { re: /Vlaga zraka:\s*([\d.]+)/,         label: 'Vlaga zraka', icon: 'fa-wind',             color: 'text-sky-400',    unit: '%'        },
+                { re: /Brzina vjetra:\s*([\d.]+)/,       label: 'Vjetar',      icon: 'fa-gauge',            color: 'text-slate-300',  unit: 'm/s'      },
+                { re: /Kiša \(zadnji sat\):\s*([\d.]+)/, label: 'Kiša',        icon: 'fa-cloud-rain',       color: 'text-blue-300',   unit: 'mm'       },
+            ];
+
+            const cityM = text.match(/PROGNOZA \(([^)]+)\)/);
+            const city  = cityM ? cityM[1] : '';
+            const opisM = text.match(/Opis:\s*(.+)/);
+            const opis  = opisM ? opisM[1].trim() : '';
+
+            let wHtml = '<p class="text-[10px] text-slate-500 mb-3 px-1">' + city + (opis ? ' · ' + opis : '') + '</p>';
+
+            wMetrics.forEach(function(m) {
+                const match = text.match(m.re);
+                const value = match ? parseFloat(match[1]).toFixed(1) : '—';
+                wHtml += '<div class="bg-slate-800/40 rounded-xl px-4 py-3 border border-slate-700/30 flex items-center justify-between">'
+                       + '<div class="flex items-center gap-2">'
+                       + '<i class="fas ' + m.icon + ' ' + m.color + ' text-xs w-4 text-center"></i>'
+                       + '<span class="text-slate-300 text-xs">' + m.label + '</span>'
+                       + '</div>'
+                       + '<span class="text-white text-xs font-semibold">' + value + ' ' + m.unit + '</span>'
+                       + '</div>';
+            });
+
+            weatherBox.innerHTML = wHtml;
+        }
+
+        // ── Akcije ────────────────────────────────────────────────────
+
+        async function sendMsg() {
+            const text = input.value.trim();
+            if (!text) return;
+
+            setLoading(true);
+            appendMessage('user', text);
+            input.value = '';
+
+            const typingId = 'typing-' + Date.now();
+            appendMessage('bot',
+                `<div class="flex items-center gap-2 text-teal-600">
+                    <i class="fas fa-circle-notch animate-spin text-[10px]"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-widest">Analiziram...</span>
+                 </div>`,
+                typingId);
+
+            try {
+                const res  = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+                document.getElementById(typingId).innerHTML = marked.parse(data.reply);
+                renderIoTCards(data.iot_summary);
+                renderWeatherCards(data.weather_summary);
+            } catch {
+                document.getElementById(typingId).innerText = 'Greška u povezivanju.';
+            }
+
+            setLoading(false);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function useChip(btn) {
+            input.value = btn.textContent;
+            input.focus();
+            sendMsg();
+        }
+
+        async function newSession() {
+            if (!confirm('Pokrenuti novu sesiju? Razgovor će biti obrisan.')) return;
+            try { await fetch('/new-session', { method: 'POST' }); } catch {}
+            chatBox.innerHTML = '';
+            appendMessage('bot',
+                '<p class="font-semibold mb-2">Nova sesija pokrenuta.</p>Što Vas zanima o Vašim usjevima danas?');
+        }
+    </script>
+</body>
+</html>
